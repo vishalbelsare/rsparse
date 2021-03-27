@@ -134,3 +134,34 @@ predictions_format_error = function() {
              "which should be integer matrix consisting of indices of predictions"
   ))
 }
+
+hit_k = function(predictions, actual, ...) {
+  stopifnot(is.matrix(predictions))
+  stopifnot(inherits(actual, "sparseMatrix"))
+
+  k = ncol(predictions)
+  n_u = nrow(predictions)
+  stopifnot(n_u == nrow(actual))
+
+  if(!is.integer(predictions)) {
+    predictions = attr(predictions, "indices", TRUE)
+    if(is.null(predictions))
+      predictions_format_error()
+  }
+  y_csr = as(actual, "RsparseMatrix")
+  res = numeric(n_u)
+  for(u in seq_len(n_u)) {
+    p1 = y_csr@p[[u]]
+    p2 = y_csr@p[[u + 1]]
+    ind = p1 + seq_len(p2 - p1)
+    # adjust from 0-based indices to 1-based
+    u_ind = y_csr@j[ind] + 1L
+    u_x = y_csr@x[ind]
+    # ord = order(u_x, decreasing = TRUE)
+    pp = predictions[u, ]
+    pp = pp[pp > 0]
+    res[[u]] = sum(pp %in% u_ind) / min(length(u_ind), k)
+    # res[[u]] = ap_at_k(predictions[u, ], u_ind[ord], k = k)
+  }
+  res
+}

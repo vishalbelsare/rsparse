@@ -76,15 +76,15 @@ solve_iter_als_softimpute = function(x, svd_current, lambda, singular_vectors = 
     B = t(svd_current$u) * sqrt(svd_current$d)
   }
 
-  x_delta = x
   # make_sparse_approximation calculates values of sparse matrix X_new = X - A %*% B
   # for only non-zero values of X
-  x_delta@x = x@x - make_sparse_approximation(x, A, B)
-  loss = (as.numeric(crossprod(x_delta@x)) + lambda * sum(svd_current$d)) / length(x_delta@x)
+  x_appr = make_sparse_approximation(x, A, B)
+  x_diff = x@x - x_appr
+  x@x = x_diff
+  loss = (as.numeric(crossprod(x@x)) + lambda * sum(svd_current$d)) / length(x@x)
 
   logger$trace("[solve_iter_als_softimpute] calculating first part of result")
-  first = (x_delta %*% svd_current[[singular_vectors]]) %*% diag( sqrt(svd_current$d) / (svd_current$d + lambda))
-  rm(x_delta)
+  first = (x %*% svd_current[[singular_vectors]]) %*% diag( sqrt(svd_current$d) / (svd_current$d + lambda))
 
   logger$trace("[solve_iter_als_softimpute] calculating second part of result")
   second = t(A * (svd_current$d / (svd_current$d + lambda)))
@@ -154,6 +154,8 @@ soft_als = function(x,
 
     if(target == "soft_impute") {
       B_hat = solve_iter_als_softimpute(tx, svd_new, lambda, "u")
+      loss = attr(B_hat, "loss")
+      logger$info(sprintf("soft_als: iter %03d, loss %.3f ", i, loss))
       B_hat = B_hat %*% diag(sqrt(svd_new$d))
     } else if(target == "svd") {
       B_hat = solve_iter_als_svd(tx, svd_new, lambda, "u")
@@ -169,14 +171,15 @@ soft_als = function(x,
     svd_new$u = svd_new$u %*% Bsvd$v
     rm(Bsvd)
     # 2. calculate for users
+    loss = NA_real_
     if(target == "soft_impute") {
       A_hat = solve_iter_als_softimpute(x, svd_new, lambda, "v")
+      loss = attr(A_hat, "loss")
+      logger$info(sprintf("soft_als: iter %03d, loss %.3f ", i, loss))
       A_hat = A_hat %*% diag(sqrt(svd_new$d))
     } else if(target == "svd") {
       A_hat = solve_iter_als_svd(x, svd_new, lambda, "v")
     }
-    loss =  attr(A_hat, "loss")
-    if(is.null(loss)) loss = NA_real_
 
     logger$trace(sprintf("running svd on user embeddings  %s", paste(dim(A_hat), collapse = "*")))
     Asvd = svd_tall_skinny(A_hat)
@@ -196,7 +199,7 @@ soft_als = function(x,
     trace_iter[[k]] = list(iter = i, scorer = "loss", value = loss)
     k = k + 1L
 
-    logger$info(sprintf("soft_als: iter %03d, frobenious norm change %.3f loss %.3f ", i, frob_delta, loss))
+    logger$info(sprintf("soft_als: iter %03d, frobenious norm change %.4f", i, frob_delta))
 
     svd_old = svd_new
     # check convergence and
@@ -255,3 +258,5 @@ svd_tall_skinny = function(x) {
   u = x %*% solve(dvt)
   list(d = d, u = as.matrix(u), v = as.matrix(svd_xtx$v))
 }
+
+# svd_tall_skinny = svd
